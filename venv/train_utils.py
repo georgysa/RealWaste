@@ -17,6 +17,7 @@ from data_utils import set_seed  # Re-import set_seed for consistency
 
 # --- A. Training Function ---
 
+'''
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=15, device=None, model_name="Model"):
     """
     Trains a given PyTorch model and evaluates it on a validation set per epoch.
@@ -109,8 +110,119 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
               f"Val Loss: {epoch_val_loss:.4f}, Val Acc: {epoch_val_acc:.2f}%")
 
     return model, train_losses, val_losses, train_accuracies, val_accuracies
+'''
 
 
+def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=50, device=None, model_name="Model"):
+    """
+    Trains a PyTorch model with automated Early Stopping based on validation loss.
+
+    Args:
+        model (nn.Module): The neural network model to train.
+        # ... (other arguments)
+        num_epochs (int): Max number of training epochs (will stop early if performance plateaus).
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model.to(device)
+
+    train_losses, val_losses = [], []
+    train_accuracies, val_accuracies = [], []
+
+    # Initialize Early Stopper: patience=5 means training stops if Val Loss doesn't improve for 5 consecutive epochs
+    early_stopper = EarlyStopper(patience=5)
+
+    for epoch in range(num_epochs):
+
+        # --- TRAINING PHASE ---
+        model.train()
+        running_loss = 0.0
+        correct_train = 0
+        total_train = 0
+
+        # ... (Training loop logic remains the same)
+        with tqdm(train_loader, desc=f"Train Epoch {epoch + 1}/{num_epochs}", unit="batch") as tepoch:
+            for images, labels in tepoch:
+                images, labels = images.to(device), labels.to(device)
+
+                optimizer.zero_grad()
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item() * images.size(0)
+                _, predicted = torch.max(outputs.data, 1)
+                total_train += labels.size(0)
+                correct_train += (predicted == labels).sum().item()
+
+                tepoch.set_postfix(loss=running_loss / total_train, accuracy=100 * correct_train / total_train)
+
+        epoch_train_loss = running_loss / total_train
+        epoch_train_acc = 100 * correct_train / total_train
+
+        train_losses.append(epoch_train_loss)
+        train_accuracies.append(epoch_train_acc)
+
+        # --- VALIDATION PHASE ---
+        model.eval()
+        val_loss = 0.0
+        correct_val = 0
+        total_val = 0
+
+        with torch.no_grad():
+            with tqdm(val_loader, desc=f"Val   Epoch {epoch + 1}/{num_epochs}", unit="batch") as vepoch:
+                for images, labels in vepoch:
+                    images, labels = images.to(device), labels.to(device)
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+
+                    val_loss += loss.item() * images.size(0)
+                    _, predicted = torch.max(outputs.data, 1)
+                    total_val += labels.size(0)
+                    correct_val += (predicted == labels).sum().item()
+
+                    vepoch.set_postfix(loss=val_loss / total_val, accuracy=100 * correct_val / total_val)
+
+        epoch_val_loss = val_loss / total_val
+        epoch_val_acc = 100 * correct_val / total_val
+
+        val_losses.append(epoch_val_loss)
+        val_accuracies.append(epoch_val_acc)
+
+        # Print the detailed epoch summary (with loss!)
+        print(f"Epoch {epoch + 1}/{num_epochs}, "
+              f"Train Loss: {epoch_train_loss:.4f}, Train Acc: {epoch_train_acc:.2f}%, "
+              f"Val Loss: {epoch_val_loss:.4f}, Val Acc: {epoch_val_acc:.2f}%")
+
+        # --- EARLY STOPPING CHECK ---
+        if early_stopper.early_stop(epoch_val_loss):
+            print(
+                f"Early stopping triggered at epoch {epoch + 1}. Validation loss has not improved for {early_stopper.patience} epochs.")
+            break  # Exit the training loop
+
+    return model, train_losses, val_losses, train_accuracies, val_accuracies
+
+# --- Early Stopping Class ---
+class EarlyStopper:
+    """Stops training if validation loss doesn't improve after a given patience."""
+    def __init__(self, patience=5, min_delta=0.0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
+
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
 # --- B. Evaluation and Metrics Function ---
 
 def evaluate_and_report(model, test_loader, device, class_names, model_name):
