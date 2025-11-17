@@ -34,7 +34,8 @@ train_loader, val_loader, test_loader, class_weights = create_dataloaders()
 class_names = list(RealWasteDataset(pd.DataFrame({'image_path': [], 'label': []})).classes.values())
 
 # --- A. MODEL 1: ResNet50 - The High-Accuracy Benchmark ---
-MODEL_NAME_1 = "ResNet50_Run1_Baseline"
+# MODEL_NAME_1 = "ResNet50_Run1_Baseline"
+MODEL_NAME_1 = "ResNet50_Run2_SGD_Optimizer"
 
 print(f"\n======== Starting Training for {MODEL_NAME_1} ========")
 
@@ -60,12 +61,9 @@ weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
 criterion = nn.CrossEntropyLoss(weight=weights)
 
 # TUNING PARAMETER 2: Optimizer and Learning Rate (LR)
-LEARNING_RATE = 1e-4  # A small LR is essential when fine-tuning deep models
-optimizer = optim.Adam(
-    # Only pass parameters that require gradient updates (the new 'fc' layer)
-    filter(lambda p: p.requires_grad, model_resnet.parameters()),
-    lr=LEARNING_RATE
-)
+LEARNING_RATE = 1e-4 # Keep the same LR for fair comparison
+MOMENTUM = 0.9 # New parameter for SGD
+optimizer = optim.SGD( filter(lambda p: p.requires_grad, model_resnet.parameters()), lr=LEARNING_RATE, momentum=MOMENTUM)
 
 # --- 5. Training ---
 NUM_EPOCHS = 10 # Start with 10 epochs for baseline, adjust later
